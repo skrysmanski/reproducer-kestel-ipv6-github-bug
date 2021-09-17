@@ -20,20 +20,28 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 
+using AppMotor.CliApp.CommandLine;
 using AppMotor.CliApp.CommandLine.Hosting;
+using AppMotor.Core.Certificates;
+using AppMotor.Core.Exceptions;
 using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
 using AppMotor.Core.Net.Http;
-using AppMotor.HttpServer;
+using AppMotor.Core.Utils;
 
 using JetBrains.Annotations;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 using Reproducer.Utils;
 
@@ -69,7 +77,7 @@ namespace Reproducer
             {
                 IPVersion = IPVersions.IPv6,
             };
-            var app = new HttpServerApplication(new TestHttpServerCommand(serverPort, this.TestConsole));
+            var app = new CliApplicationWithCommand(new TestHttpServerCommand(serverPort, this.TestConsole));
             Task appTask = app.RunAsync(cts.Token);
 
             try
@@ -166,7 +174,7 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private sealed class TestHttpServerCommand : HttpServerCommandBase
+        private sealed class TestHttpServerCommand : GenericHostCliCommand
         {
             private readonly HttpServerPort _testPort;
 
@@ -189,13 +197,130 @@ namespace Reproducer
             }
 
             /// <inheritdoc />
-            protected override IEnumerable<HttpServerPort> GetServerPorts(IServiceProvider serviceProvider)
+            protected override void ConfigureApplication(IHostBuilder hostBuilder)
+            {
+                hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
+                {
+                    // Clear any "pre-defined" list of URLs (otherwise there will be a warning when
+                    // this app runs).
+                    webBuilder.UseUrls("");
+
+                    // Configure Kestrel.
+                    webBuilder.UseKestrel(ConfigureKestrel);
+
+                    // Use our "Startup" class for any further configuration.
+                    webBuilder.UseStartup(CreateStartupClass);
+                });
+            }
+
+            private void ConfigureKestrel(KestrelServerOptions options)
+            {
+                var logger = options.ApplicationServices.GetRequiredService<ILogger<TestHttpServerCommand>>();
+
+                options.ConfigureHttpsDefaults(configureOptions =>
+                {
+                    configureOptions.SslProtocols = TlsSettings.EnabledTlsProtocols;
+                });
+
+                foreach (var serverPort in GetServerPorts())
+                {
+                    Action<ListenOptions> configure;
+
+                    if (serverPort is HttpsServerPort httpsServerPort)
+                    {
+                        var certificate = httpsServerPort.CertificateProvider();
+
+                        if (OperatingSystem.IsWindows())
+                        {
+                            //
+                            // Workaround for error "No credentials are available in the security package".
+                            //
+                            // Basically, the problem is that on Windows TLS is handled out-of-process. But
+                            // if the private key for certificate only in-memory of the current process,
+                            // the out-of-process TLS handler is unable to get the private key (see
+                            // https://github.com/dotnet/runtime/issues/23749#issuecomment-485947319 )
+                            //
+                            // Full discussion: https://github.com/dotnet/runtime/issues/23749
+                            //
+                            // Workaround: https://github.com/dotnet/runtime/issues/23749#issuecomment-739895373
+                            //
+                            var originalCertificate = certificate;
+
+                            byte[] exportedCertificateBytes = ((X509Certificate2)originalCertificate).Export(X509ContentType.Pkcs12);
+    #pragma warning disable CA2000 // Dispose objects before losing scope
+                            var reimportedCertificate = new X509Certificate2(exportedCertificateBytes, password: (string?)null, X509KeyStorageFlags.Exportable);
+                            certificate = new TlsCertificate(reimportedCertificate, allowPrivateKeyExport: true);
+    #pragma warning restore CA2000 // Dispose objects before losing scope
+
+                            if (httpsServerPort.CertificateProviderCallerOwnsCertificates)
+                            {
+                                originalCertificate.Dispose();
+                            }
+                        }
+
+                        logger.LogInformation("Using certificate '{thumbprint}' for server port {port}.", certificate.Thumbprint, httpsServerPort.Port);
+
+                        configure = listenOptions =>
+                        {
+                            listenOptions.UseHttps(certificate);
+                        };
+                    }
+                    else
+                    {
+                        configure = listenOptions =>
+                        {
+                            listenOptions.UseConnectionLogging();
+                        };
+                    }
+
+                    switch (serverPort.ListenAddress)
+                    {
+                        case SocketListenAddresses.Any:
+                            switch (serverPort.IPVersion)
+                            {
+                                case IPVersions.IPv4:
+                                    options.Listen(IPAddress.Any, serverPort.Port, configure);
+                                    break;
+                                case IPVersions.IPv6:
+                                    options.Listen(IPAddress.IPv6Any, serverPort.Port, configure);
+                                    break;
+                                case IPVersions.DualStack:
+                                    options.ListenAnyIP(serverPort.Port, configure);
+                                    break;
+                                default:
+                                    throw new UnexpectedSwitchValueException(nameof(serverPort.IPVersion), serverPort.IPVersion);
+                            }
+                            break;
+
+                        case SocketListenAddresses.Loopback:
+                            switch (serverPort.IPVersion)
+                            {
+                                case IPVersions.IPv4:
+                                    options.Listen(IPAddress.Loopback, serverPort.Port, configure);
+                                    break;
+                                case IPVersions.IPv6:
+                                    options.Listen(IPAddress.IPv6Loopback, serverPort.Port, configure);
+                                    break;
+                                case IPVersions.DualStack:
+                                    options.ListenLocalhost(serverPort.Port, configure);
+                                    break;
+                                default:
+                                    throw new UnexpectedSwitchValueException(nameof(serverPort.IPVersion), serverPort.IPVersion);
+                            }
+                            break;
+
+                        default:
+                            throw new UnexpectedSwitchValueException(nameof(serverPort.ListenAddress), serverPort.ListenAddress);
+                    }
+                }
+            }
+
+            private IEnumerable<HttpServerPort> GetServerPorts()
             {
                 yield return this._testPort;
             }
 
-            /// <inheritdoc />
-            protected override object CreateStartupClass(WebHostBuilderContext context)
+            private static object CreateStartupClass(WebHostBuilderContext context)
             {
                 return new Startup();
             }
