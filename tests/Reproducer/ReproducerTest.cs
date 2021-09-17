@@ -28,16 +28,14 @@ using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
 using AppMotor.Core.Net.Http;
 using AppMotor.HttpServer;
-using AppMotor.TestCore;
-using AppMotor.TestCore.Extensions;
-using AppMotor.TestCore.Logging;
-using AppMotor.TestCore.Networking;
 
 using JetBrains.Annotations;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+
+using Reproducer.Utils;
 
 using Shouldly;
 
@@ -46,13 +44,15 @@ using Xunit.Abstractions;
 
 namespace Reproducer
 {
-    public sealed class ReproducerTests : TestBase
+    public sealed class ReproducerTests
     {
         private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
 
+        private ITestOutputHelper TestConsole { get; }
+
         public ReproducerTests(ITestOutputHelper testOutputHelper)
-            : base(testOutputHelper)
         {
+            this.TestConsole = testOutputHelper;
         }
 
         [Theory]
@@ -85,17 +85,17 @@ namespace Reproducer
             }
             finally
             {
-                this.TestConsole.WriteLine();
+                this.TestConsole.WriteLine("");
 
                 cts.Cancel();
 
-                await appTask.OrTimeoutAfter(TimeSpan.FromSeconds(10));
+                await appTask;
             }
         }
 
         private async Task ExecuteRequest(HttpClient httpClient, string targetHostIpAddress, int testPort)
         {
-            this.TestConsole.WriteLine();
+            this.TestConsole.WriteLine("");
             this.TestConsole.WriteLine($"Running query against: {targetHostIpAddress}");
 
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{testPort}/api/ping");

@@ -9,7 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.Core\AppMotor.Core.csproj" />
     <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.HttpServer\AppMotor.HttpServer.csproj" />
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.TestCore\AppMotor.TestCore.csproj" />
   </ItemGroup>
 
 </Project>
