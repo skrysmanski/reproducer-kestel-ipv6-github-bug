@@ -1,0 +1,15 @@
+﻿<!--
+
+  Contains the NuGet package references for "Project.Shared.props".
+
+  This file is NOT meant to be imported directly.
+
+-->
+<!-- You can find the latest version of this file here: https://github.com/skrysmanski/base-dotnet -->
+<Project>
+
+  <ItemGroup>
+    <PackageReference Include="JetBrains.Annotations" Version="2021.2.0" />
+  </ItemGroup>
+
+</Project>
