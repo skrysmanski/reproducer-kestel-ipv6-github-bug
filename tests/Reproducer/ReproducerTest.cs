@@ -24,7 +24,6 @@ using System.Threading.Tasks;
 
 using AppMotor.CliApp.CommandLine;
 using AppMotor.Core.Exceptions;
-using AppMotor.Core.IO;
 using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
 using AppMotor.Core.Net.Http;
@@ -35,9 +34,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.EnvironmentVariables;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -188,7 +184,17 @@ namespace Reproducer
 
             private async Task<int> Execute(CancellationToken cancellationToken)
             {
-                IHostBuilder hostBuilder = CreateHostBuilder();
+                var hostBuilder = Host.CreateDefaultBuilder();
+
+                hostBuilder.ConfigureLogging((context, loggingBuilder) =>
+                {
+                    // Load the logging configuration from the specified configuration section.
+                    loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
+
+                    context.Configuration["Logging:LogLevel:Default"] = "Debug";
+                    //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
+                    loggingBuilder.AddXUnitLogger(this._testOutputHelper);
+                });
 
                 hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
                 {
@@ -210,45 +216,6 @@ namespace Reproducer
                 return 0;
             }
 
-            private IHostBuilder CreateHostBuilder()
-            {
-                var hostBuilder = new HostBuilder();
-
-                hostBuilder.UseContentRoot(DirectoryPath.GetCurrentDirectory().Value);
-
-                var options = new ServiceProviderOptions()
-                {
-                    // Enable all validations
-                    ValidateScopes = true,
-                    ValidateOnBuild = true,
-                };
-
-                hostBuilder.UseServiceProviderFactory(new DefaultServiceProviderFactory(options));
-
-                hostBuilder.ConfigureAppConfiguration((context, configurationBuilder) =>
-                {
-                    IHostEnvironment env = context.HostingEnvironment;
-
-                    bool reloadOnChange = context.Configuration.GetValue("hostBuilder:reloadConfigOnChange", defaultValue: true);
-
-                    configurationBuilder.AddJsonFile("appsettings.json", optional: true, reloadOnChange: reloadOnChange);
-                    configurationBuilder.AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: reloadOnChange);
-
-                    configurationBuilder.Add(new EnvironmentVariablesConfigurationSource());
-                });
-
-                hostBuilder.ConfigureLogging((context, loggingBuilder) =>
-                {
-                    // Load the logging configuration from the specified configuration section.
-                    loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
-
-                    context.Configuration["Logging:LogLevel:Default"] = "Debug";
-                    //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
-                    loggingBuilder.AddXUnitLogger(this._testOutputHelper);
-                });
-
-                return hostBuilder;
-            }
             private void ConfigureKestrel(KestrelServerOptions options)
             {
                 static void Configure(ListenOptions listenOptions)
