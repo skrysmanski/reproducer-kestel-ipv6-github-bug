@@ -174,12 +174,13 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private sealed class TestHttpServerCommand : GenericHostCliCommand
+        private sealed class TestHttpServerCommand : CliCommand
         {
+            protected override CliCommandExecutor Executor => new(Execute);
+
             private readonly HttpServerPort _testPort;
 
-            /// <inheritdoc />
-            protected override IHostBuilderFactory HostBuilderFactory { get; }
+            private IHostBuilderFactory HostBuilderFactory { get; }
 
             public TestHttpServerCommand(HttpServerPort testPort, ITestOutputHelper testOutputHelper)
             {
@@ -196,8 +197,29 @@ namespace Reproducer
                 };
             }
 
-            /// <inheritdoc />
-            protected override void ConfigureApplication(IHostBuilder hostBuilder)
+            private async Task<int> Execute(CancellationToken cancellationToken)
+            {
+                IHostBuilder hostBuilder = this.HostBuilderFactory.CreateHostBuilder();
+
+                ConfigureApplication(hostBuilder);
+
+                IHost host = hostBuilder.Build();
+
+                try
+                {
+                    await host.StartAsync(cancellationToken).ConfigureAwait(false);
+
+                    await host.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
+
+                    return 0;
+                }
+                finally
+                {
+                    await DisposeHelper.DisposeWithAsyncSupport(host).ConfigureAwait(false);
+                }
+            }
+
+            private void ConfigureApplication(IHostBuilder hostBuilder)
             {
                 hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
                 {
