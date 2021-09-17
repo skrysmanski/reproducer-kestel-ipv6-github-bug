@@ -46,10 +46,6 @@ using Xunit.Abstractions;
 
 namespace Reproducer
 {
-    /// <summary>
-    /// These tests test that serving from and connecting to the various combinations of <see cref="SocketListenAddresses"/>
-    /// and <see cref="IPVersions"/> works.
-    /// </summary>
     public sealed class ReproducerTests : TestBase
     {
         private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
@@ -60,9 +56,10 @@ namespace Reproducer
         }
 
         [Theory]
-        [InlineData(SocketListenAddresses.Loopback)]
-        [InlineData(SocketListenAddresses.Any)]
-        public async Task TestConnection(SocketListenAddresses listenAddress)
+        [InlineData(SocketListenAddresses.Loopback, "::1")]
+        [InlineData(SocketListenAddresses.Any, "::1")]
+        [InlineData(SocketListenAddresses.Any, "public")]
+        public async Task TestConnection(SocketListenAddresses listenAddress, string targetHostIpAddress)
         {
             int testPort = ServerPortProvider.GetNextTestPort();
 
@@ -79,11 +76,12 @@ namespace Reproducer
             {
                 using var httpClient = HttpClientFactory.CreateHttpClient();
 
-                await ExecuteRequest(httpClient, "[::1]", testPort);
-                if (listenAddress == SocketListenAddresses.Any)
+                if (targetHostIpAddress == "public")
                 {
-                    await ExecuteRequest(httpClient, $"[{s_ownIPv6Address.Value}]", testPort);
+                    targetHostIpAddress = s_ownIPv6Address.Value;
                 }
+
+                await ExecuteRequest(httpClient, targetHostIpAddress, testPort);
             }
             finally
             {
@@ -95,19 +93,12 @@ namespace Reproducer
             }
         }
 
-        private async Task ExecuteRequest(HttpClient httpClient, string hostIpAddress, int testPort)
+        private async Task ExecuteRequest(HttpClient httpClient, string targetHostIpAddress, int testPort)
         {
             this.TestConsole.WriteLine();
-            this.TestConsole.WriteLine($"Running query against: {hostIpAddress}");
+            this.TestConsole.WriteLine($"Running query against: {targetHostIpAddress}");
 
-            if (hostIpAddress.StartsWith('['))
-            {
-                // IPv6 address
-                //hostIpAddress = Regex.Replace(hostIpAddress, @"^\[(.+)%\d+\]$", "[$1]");
-                //hostIpAddress = hostIpAddress.Replace("%", WebUtility.UrlEncode("%"));
-            }
-
-            var requestUri = new Uri($"http://{hostIpAddress}:{testPort}/api/ping");
+            var requestUri = new Uri($"http://[{targetHostIpAddress}]:{testPort}/api/ping");
 
             this.TestConsole.WriteLine($"IDN host: {requestUri.IdnHost}");
 
@@ -139,16 +130,7 @@ namespace Reproducer
 
             var responseString = await response.Content.ReadAsStringAsync();
 
-            if (hostIpAddress.StartsWith('['))
-            {
-                // IPv6
-                responseString.ShouldBe($"Caller ip address family: {AddressFamily.InterNetworkV6}");
-            }
-            else
-            {
-                // IPv4
-                responseString.ShouldBe($"Caller ip address family: {AddressFamily.InterNetwork}");
-            }
+            responseString.ShouldBe($"Caller ip address family: {AddressFamily.InterNetworkV6}");
 
             this.TestConsole.WriteLine("Done");
         }
