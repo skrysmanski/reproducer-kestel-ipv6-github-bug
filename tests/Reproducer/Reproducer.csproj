@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="$(ProjectCommonsDirectory)Project.Tests.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.Core\AppMotor.Core.csproj" />
+    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.HttpServer\AppMotor.HttpServer.csproj" />
+    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.TestCore\AppMotor.TestCore.csproj" />
+  </ItemGroup>
+
+</Project>
