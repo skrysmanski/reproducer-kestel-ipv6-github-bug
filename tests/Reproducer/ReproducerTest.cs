@@ -28,7 +28,6 @@ using AppMotor.Core.IO;
 using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
 using AppMotor.Core.Net.Http;
-using AppMotor.Core.Utils;
 
 using JetBrains.Annotations;
 
@@ -206,18 +205,9 @@ namespace Reproducer
 
                 IHost host = hostBuilder.Build();
 
-                try
-                {
-                    await host.StartAsync(cancellationToken).ConfigureAwait(false);
+                await host.RunAsync(cancellationToken);
 
-                    await host.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
-
-                    return 0;
-                }
-                finally
-                {
-                    await DisposeHelper.DisposeWithAsyncSupport(host).ConfigureAwait(false);
-                }
+                return 0;
             }
 
             private IHostBuilder CreateHostBuilder()
