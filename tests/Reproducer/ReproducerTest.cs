@@ -26,8 +26,6 @@ namespace Reproducer
 {
     public sealed class ReproducerTests
     {
-        private static readonly Lazy<List<string>> s_ownIPv6Addresses = new(GetLocalIpAddresses);
-
         private static readonly HttpClient s_httpClient = new();
 
         private ITestOutputHelper TestConsole { get; }
@@ -45,7 +43,7 @@ namespace Reproducer
             get
             {
                 yield return new object[] { "::1" };
-                foreach (var address in s_ownIPv6Addresses.Value)
+                foreach (var address in GetOwnLinkLocalIpV6Addresses())
                 {
                     yield return new object[] { address };
                 }
@@ -111,7 +109,7 @@ namespace Reproducer
         }
 
         [MustUseReturnValue]
-        private static List<string> GetLocalIpAddresses()
+        private static List<string> GetOwnLinkLocalIpV6Addresses()
         {
             var allAddresses = new List<string>();
 
@@ -132,6 +130,11 @@ namespace Reproducer
                 foreach (var ip in ipProperties.UnicastAddresses)
                 {
                     if (ip.Address.AddressFamily != AddressFamily.InterNetworkV6 || IPAddress.IsLoopback(ip.Address))
+                    {
+                        continue;
+                    }
+
+                    if (!ip.Address.IsIPv6LinkLocal)
                     {
                         continue;
                     }
