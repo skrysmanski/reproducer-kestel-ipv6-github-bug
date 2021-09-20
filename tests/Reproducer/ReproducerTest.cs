@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
@@ -39,10 +40,18 @@ namespace Reproducer
             this._testPort = ServerPortProvider.GetNextTestPort();
         }
 
+        public static IEnumerable<object[]> TestData
+        {
+            get
+            {
+                yield return new object[] { SocketListenAddresses.Loopback, "::1" };
+                yield return new object[] { SocketListenAddresses.Any, "::1" };
+                yield return new object[] { SocketListenAddresses.Any, s_ownIPv6Address.Value };
+            }
+        }
+
         [Theory]
-        [InlineData(SocketListenAddresses.Loopback, "::1")]
-        [InlineData(SocketListenAddresses.Any, "::1")]
-        [InlineData(SocketListenAddresses.Any, "public")]
+        [MemberData(nameof(TestData))]
         public async Task TestConnection(SocketListenAddresses listenAddress, string targetHostIpAddress)
         {
             using var cts = new CancellationTokenSource();
@@ -51,11 +60,6 @@ namespace Reproducer
 
             try
             {
-                if (targetHostIpAddress == "public")
-                {
-                    targetHostIpAddress = s_ownIPv6Address.Value;
-                }
-
                 await ExecuteRequest(targetHostIpAddress);
             }
             finally
