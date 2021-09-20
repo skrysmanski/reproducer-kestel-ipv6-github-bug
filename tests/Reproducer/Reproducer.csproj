@@ -15,7 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.CliApp\AppMotor.CliApp.csproj" />
     <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.Core\AppMotor.Core.csproj" />
   </ItemGroup>
 

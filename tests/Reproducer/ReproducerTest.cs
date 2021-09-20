@@ -22,7 +22,6 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-using AppMotor.CliApp.CommandLine;
 using AppMotor.Core.Exceptions;
 using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
@@ -71,8 +70,7 @@ namespace Reproducer
             {
                 IPVersion = IPVersions.IPv6,
             };
-            var app = new CliApplicationWithCommand(new TestHttpServerCommand(serverPort, this.TestConsole));
-            Task appTask = app.RunAsync(cts.Token);
+            Task appTask = Execute(cts.Token, serverPort);
 
             try
             {
@@ -168,100 +166,83 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private sealed class TestHttpServerCommand : CliCommand
+        private async Task Execute(CancellationToken cancellationToken, HttpServerPort testPort)
         {
-            protected override CliCommandExecutor Executor => new(Execute);
+            var hostBuilder = Host.CreateDefaultBuilder();
 
-            private readonly HttpServerPort _testPort;
-
-            private readonly ITestOutputHelper _testOutputHelper;
-
-            public TestHttpServerCommand(HttpServerPort testPort, ITestOutputHelper testOutputHelper)
+            hostBuilder.ConfigureLogging((context, loggingBuilder) =>
             {
-                this._testPort = testPort;
-                this._testOutputHelper = testOutputHelper;
+                // Load the logging configuration from the specified configuration section.
+                loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
+
+                context.Configuration["Logging:LogLevel:Default"] = "Debug";
+                //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
+                loggingBuilder.AddXUnitLogger(this.TestConsole);
+            });
+
+            hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
+            {
+                // Clear any "pre-defined" list of URLs (otherwise there will be a warning when
+                // this app runs).
+                webBuilder.UseUrls("");
+
+                // Configure Kestrel.
+                webBuilder.UseKestrel(options => ConfigureKestrel(options, testPort));
+
+                // Use our "Startup" class for any further configuration.
+                webBuilder.UseStartup<Startup>();
+            });
+
+            IHost host = hostBuilder.Build();
+
+            await host.RunAsync(cancellationToken);
+        }
+
+        private static void ConfigureKestrel(KestrelServerOptions options, HttpServerPort testPort)
+        {
+            static void Configure(ListenOptions listenOptions)
+            {
+                listenOptions.UseConnectionLogging();
             }
 
-            private async Task<int> Execute(CancellationToken cancellationToken)
+            switch (testPort.ListenAddress)
             {
-                var hostBuilder = Host.CreateDefaultBuilder();
+                case SocketListenAddresses.Any:
+                    switch (testPort.IPVersion)
+                    {
+                        case IPVersions.IPv4:
+                            options.Listen(IPAddress.Any, testPort.Port, Configure);
+                            break;
+                        case IPVersions.IPv6:
+                            options.Listen(IPAddress.IPv6Any, testPort.Port, Configure);
+                            break;
+                        case IPVersions.DualStack:
+                            options.ListenAnyIP(testPort.Port, Configure);
+                            break;
+                        default:
+                            throw new UnexpectedSwitchValueException(nameof(testPort.IPVersion), testPort.IPVersion);
+                    }
+                    break;
 
-                hostBuilder.ConfigureLogging((context, loggingBuilder) =>
-                {
-                    // Load the logging configuration from the specified configuration section.
-                    loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
+                case SocketListenAddresses.Loopback:
+                    switch (testPort.IPVersion)
+                    {
+                        case IPVersions.IPv4:
+                            options.Listen(IPAddress.Loopback, testPort.Port, Configure);
+                            break;
+                        case IPVersions.IPv6:
+                            options.Listen(IPAddress.IPv6Loopback, testPort.Port, Configure);
+                            break;
+                        case IPVersions.DualStack:
+                            options.ListenLocalhost(testPort.Port, Configure);
+                            break;
+                        default:
+                            throw new UnexpectedSwitchValueException(nameof(testPort.IPVersion), testPort.IPVersion);
+                    }
+                    break;
 
-                    context.Configuration["Logging:LogLevel:Default"] = "Debug";
-                    //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
-                    loggingBuilder.AddXUnitLogger(this._testOutputHelper);
-                });
-
-                hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
-                {
-                    // Clear any "pre-defined" list of URLs (otherwise there will be a warning when
-                    // this app runs).
-                    webBuilder.UseUrls("");
-
-                    // Configure Kestrel.
-                    webBuilder.UseKestrel(ConfigureKestrel);
-
-                    // Use our "Startup" class for any further configuration.
-                    webBuilder.UseStartup<Startup>();
-                });
-
-                IHost host = hostBuilder.Build();
-
-                await host.RunAsync(cancellationToken);
-
-                return 0;
-            }
-
-            private void ConfigureKestrel(KestrelServerOptions options)
-            {
-                static void Configure(ListenOptions listenOptions)
-                {
-                    listenOptions.UseConnectionLogging();
-                }
-
-                switch (this._testPort.ListenAddress)
-                {
-                    case SocketListenAddresses.Any:
-                        switch (this._testPort.IPVersion)
-                        {
-                            case IPVersions.IPv4:
-                                options.Listen(IPAddress.Any, this._testPort.Port, Configure);
-                                break;
-                            case IPVersions.IPv6:
-                                options.Listen(IPAddress.IPv6Any, this._testPort.Port, Configure);
-                                break;
-                            case IPVersions.DualStack:
-                                options.ListenAnyIP(this._testPort.Port, Configure);
-                                break;
-                            default:
-                                throw new UnexpectedSwitchValueException(nameof(this._testPort.IPVersion), this._testPort.IPVersion);
-                        }
-                        break;
-
-                    case SocketListenAddresses.Loopback:
-                        switch (this._testPort.IPVersion)
-                        {
-                            case IPVersions.IPv4:
-                                options.Listen(IPAddress.Loopback, this._testPort.Port, Configure);
-                                break;
-                            case IPVersions.IPv6:
-                                options.Listen(IPAddress.IPv6Loopback, this._testPort.Port, Configure);
-                                break;
-                            case IPVersions.DualStack:
-                                options.ListenLocalhost(this._testPort.Port, Configure);
-                                break;
-                            default:
-                                throw new UnexpectedSwitchValueException(nameof(this._testPort.IPVersion), this._testPort.IPVersion);
-                        }
-                        break;
-
-                    default:
-                        throw new UnexpectedSwitchValueException(nameof(this._testPort.ListenAddress), this._testPort.ListenAddress);
-                }
+                default:
+                    throw new UnexpectedSwitchValueException(nameof(testPort.ListenAddress), testPort.ListenAddress);
             }
         }
 
