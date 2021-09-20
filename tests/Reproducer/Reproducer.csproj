@@ -7,9 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.Core\AppMotor.Core.csproj" />
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.HttpServer\AppMotor.HttpServer.csproj" />
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.TestCore\AppMotor.TestCore.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

@@ -1,21 +1,4 @@
-﻿#region License
-// Copyright 2021 AppMotor Framework (https://github.com/skrysmanski/AppMotor)
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-#endregion
-
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
@@ -23,21 +6,16 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-using AppMotor.CliApp.CommandLine.Hosting;
-using AppMotor.Core.Logging;
-using AppMotor.Core.Net;
-using AppMotor.Core.Net.Http;
-using AppMotor.HttpServer;
-using AppMotor.TestCore;
-using AppMotor.TestCore.Extensions;
-using AppMotor.TestCore.Logging;
-using AppMotor.TestCore.Networking;
-
 using JetBrains.Annotations;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+using Reproducer.Utils;
 
 using Shouldly;
 
@@ -46,13 +24,17 @@ using Xunit.Abstractions;
 
 namespace Reproducer
 {
-    public sealed class ReproducerTests : TestBase
+    public sealed class ReproducerTests
     {
         private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
 
+        private static readonly HttpClient s_httpClient = new();
+
+        private ITestOutputHelper TestConsole { get; }
+
         public ReproducerTests(ITestOutputHelper testOutputHelper)
-            : base(testOutputHelper)
         {
+            this.TestConsole = testOutputHelper;
         }
 
         [Theory]
@@ -65,37 +47,31 @@ namespace Reproducer
 
             using var cts = new CancellationTokenSource();
 
-            var serverPort = new HttpServerPort(listenAddress, testPort)
-            {
-                IPVersion = IPVersions.IPv6,
-            };
-            var app = new HttpServerApplication(new TestHttpServerCommand(serverPort, this.TestConsole));
-            Task appTask = app.RunAsync(cts.Token);
+            var serverPort = new ServerPort(listenAddress, testPort);
+            Task appTask = RunServerAsync(cts.Token, serverPort);
 
             try
             {
-                using var httpClient = HttpClientFactory.CreateHttpClient();
-
                 if (targetHostIpAddress == "public")
                 {
                     targetHostIpAddress = s_ownIPv6Address.Value;
                 }
 
-                await ExecuteRequest(httpClient, targetHostIpAddress, testPort);
+                await ExecuteRequest(targetHostIpAddress, testPort);
             }
             finally
             {
-                this.TestConsole.WriteLine();
+                this.TestConsole.WriteLine("");
 
                 cts.Cancel();
 
-                await appTask.OrTimeoutAfter(TimeSpan.FromSeconds(10));
+                await appTask;
             }
         }
 
-        private async Task ExecuteRequest(HttpClient httpClient, string targetHostIpAddress, int testPort)
+        private async Task ExecuteRequest(string targetHostIpAddress, int testPort)
         {
-            this.TestConsole.WriteLine();
+            this.TestConsole.WriteLine("");
             this.TestConsole.WriteLine($"Running query against: {targetHostIpAddress}");
 
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{testPort}/api/ping");
@@ -107,11 +83,11 @@ namespace Reproducer
             HttpResponseMessage response;
             try
             {
-                response = await httpClient.SendAsync(requestMessage);
+                response = await s_httpClient.SendAsync(requestMessage);
             }
             catch (Exception ex)
             {
-                this.TestConsole.WriteLine(ex.ToStringExtended());
+                this.TestConsole.WriteLine(ex.ToString());
                 throw;
             }
 
@@ -166,38 +142,57 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private sealed class TestHttpServerCommand : HttpServerCommandBase
+        private async Task RunServerAsync(CancellationToken cancellationToken, ServerPort testPort)
         {
-            private readonly HttpServerPort _testPort;
+            var hostBuilder = Host.CreateDefaultBuilder();
 
-            /// <inheritdoc />
-            protected override IHostBuilderFactory HostBuilderFactory { get; }
-
-            public TestHttpServerCommand(HttpServerPort testPort, ITestOutputHelper testOutputHelper)
+            hostBuilder.ConfigureLogging((context, loggingBuilder) =>
             {
-                this._testPort = testPort;
+                // Load the logging configuration from the specified configuration section.
+                loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
 
-                this.HostBuilderFactory = new DefaultHostBuilderFactory()
-                {
-                    LoggingConfigurationProvider = (ctx, builder) =>
-                    {
-                        ctx.Configuration["Logging:LogLevel:Default"] = "Debug";
-                        //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
-                        builder.AddXUnitLogger(testOutputHelper);
-                    },
-                };
+                context.Configuration["Logging:LogLevel:Default"] = "Debug";
+                //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
+                loggingBuilder.AddXUnitLogger(this.TestConsole);
+            });
+
+            hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
+            {
+                // Clear any "pre-defined" list of URLs (otherwise there will be a warning when
+                // this app runs).
+                webBuilder.UseUrls("");
+
+                // Configure Kestrel.
+                webBuilder.UseKestrel(options => ConfigureKestrel(options, testPort));
+
+                // Use our "Startup" class for any further configuration.
+                webBuilder.UseStartup<Startup>();
+            });
+
+            IHost host = hostBuilder.Build();
+
+            await host.RunAsync(cancellationToken);
+        }
+
+        private static void ConfigureKestrel(KestrelServerOptions options, ServerPort testPort)
+        {
+            static void Configure(ListenOptions listenOptions)
+            {
+                listenOptions.UseConnectionLogging();
             }
 
-            /// <inheritdoc />
-            protected override IEnumerable<HttpServerPort> GetServerPorts(IServiceProvider serviceProvider)
+            switch (testPort.ListenAddress)
             {
-                yield return this._testPort;
-            }
+                case SocketListenAddresses.Any:
+                    options.Listen(IPAddress.IPv6Any, testPort.Port, Configure);
+                    break;
 
-            /// <inheritdoc />
-            protected override object CreateStartupClass(WebHostBuilderContext context)
-            {
-                return new Startup();
+                case SocketListenAddresses.Loopback:
+                    options.Listen(IPAddress.IPv6Loopback, testPort.Port, Configure);
+                    break;
+
+                default:
+                    throw new InvalidOperationException(nameof(testPort.ListenAddress));
             }
         }
 
@@ -225,5 +220,7 @@ namespace Reproducer
                 });
             }
         }
+
+        private record ServerPort(SocketListenAddresses ListenAddress, int Port);
     }
 }
