@@ -30,14 +30,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_StyleGuide", "_StyleGuide"
 		_StyleGuide\styleguide.globalconfig = _StyleGuide\styleguide.globalconfig
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{32140DA4-CE8A-43BC-B6BF-256C90495E1E}"
-	ProjectSection(SolutionItems) = preProject
-		src\.editorconfig = src\.editorconfig
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{80C6C1F6-CB66-493B-B8E1-276D4CCFB170}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reproducer", "tests\Reproducer\Reproducer.csproj", "{1A85FDB1-7917-4F80-BEDA-41C0787E51B5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Reproducer", "Reproducer\Reproducer.csproj", "{1A85FDB1-7917-4F80-BEDA-41C0787E51B5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -56,7 +49,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{BA1E9B9F-AD3B-41A4-B9AC-490A101FD762} = {D449EFC6-4D96-4FF2-B01F-A4748B50D9C3}
 		{FB7975C6-3C2F-4728-B3D0-DA59F3F724E4} = {D449EFC6-4D96-4FF2-B01F-A4748B50D9C3}
-		{1A85FDB1-7917-4F80-BEDA-41C0787E51B5} = {80C6C1F6-CB66-493B-B8E1-276D4CCFB170}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FF64C9CC-C599-47C6-892D-FB620795361C}
