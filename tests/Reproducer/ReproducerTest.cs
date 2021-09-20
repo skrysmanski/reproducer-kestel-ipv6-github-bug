@@ -22,8 +22,6 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-using AppMotor.Core.Exceptions;
-using AppMotor.Core.Logging;
 using AppMotor.Core.Net;
 using AppMotor.Core.Net.Http;
 
@@ -66,11 +64,8 @@ namespace Reproducer
 
             using var cts = new CancellationTokenSource();
 
-            var serverPort = new HttpServerPort(listenAddress, testPort)
-            {
-                IPVersion = IPVersions.IPv6,
-            };
-            Task appTask = Execute(cts.Token, serverPort);
+            var serverPort = new ServerPort(listenAddress, testPort);
+            Task appTask = RunServerAsync(cts.Token, serverPort);
 
             try
             {
@@ -111,7 +106,7 @@ namespace Reproducer
             }
             catch (Exception ex)
             {
-                this.TestConsole.WriteLine(ex.ToStringExtended());
+                this.TestConsole.WriteLine(ex.ToString());
                 throw;
             }
 
@@ -166,7 +161,7 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private async Task Execute(CancellationToken cancellationToken, HttpServerPort testPort)
+        private async Task RunServerAsync(CancellationToken cancellationToken, ServerPort testPort)
         {
             var hostBuilder = Host.CreateDefaultBuilder();
 
@@ -198,7 +193,7 @@ namespace Reproducer
             await host.RunAsync(cancellationToken);
         }
 
-        private static void ConfigureKestrel(KestrelServerOptions options, HttpServerPort testPort)
+        private static void ConfigureKestrel(KestrelServerOptions options, ServerPort testPort)
         {
             static void Configure(ListenOptions listenOptions)
             {
@@ -208,41 +203,15 @@ namespace Reproducer
             switch (testPort.ListenAddress)
             {
                 case SocketListenAddresses.Any:
-                    switch (testPort.IPVersion)
-                    {
-                        case IPVersions.IPv4:
-                            options.Listen(IPAddress.Any, testPort.Port, Configure);
-                            break;
-                        case IPVersions.IPv6:
-                            options.Listen(IPAddress.IPv6Any, testPort.Port, Configure);
-                            break;
-                        case IPVersions.DualStack:
-                            options.ListenAnyIP(testPort.Port, Configure);
-                            break;
-                        default:
-                            throw new UnexpectedSwitchValueException(nameof(testPort.IPVersion), testPort.IPVersion);
-                    }
+                    options.Listen(IPAddress.IPv6Any, testPort.Port, Configure);
                     break;
 
                 case SocketListenAddresses.Loopback:
-                    switch (testPort.IPVersion)
-                    {
-                        case IPVersions.IPv4:
-                            options.Listen(IPAddress.Loopback, testPort.Port, Configure);
-                            break;
-                        case IPVersions.IPv6:
-                            options.Listen(IPAddress.IPv6Loopback, testPort.Port, Configure);
-                            break;
-                        case IPVersions.DualStack:
-                            options.ListenLocalhost(testPort.Port, Configure);
-                            break;
-                        default:
-                            throw new UnexpectedSwitchValueException(nameof(testPort.IPVersion), testPort.IPVersion);
-                    }
+                    options.Listen(IPAddress.IPv6Loopback, testPort.Port, Configure);
                     break;
 
                 default:
-                    throw new UnexpectedSwitchValueException(nameof(testPort.ListenAddress), testPort.ListenAddress);
+                    throw new InvalidOperationException(nameof(testPort.ListenAddress));
             }
         }
 

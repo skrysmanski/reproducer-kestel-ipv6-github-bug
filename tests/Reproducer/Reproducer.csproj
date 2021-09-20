@@ -14,8 +14,4 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="5.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\ext\AppMotor\src\AppMotor.Core\AppMotor.Core.csproj" />
-  </ItemGroup>
-
 </Project>

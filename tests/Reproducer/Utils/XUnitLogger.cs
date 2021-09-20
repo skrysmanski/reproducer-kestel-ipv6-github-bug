@@ -16,8 +16,6 @@
 
 using System;
 
-using AppMotor.Core.Exceptions;
-
 using JetBrains.Annotations;
 
 using Microsoft.Extensions.Logging;
@@ -72,7 +70,7 @@ namespace Reproducer.Utils
                 LogLevel.Warning => "warn",
                 LogLevel.Error => "fail",
                 LogLevel.Critical => "crit",
-                _ => throw new UnexpectedSwitchValueException(nameof(logLevel), logLevel),
+                _ => throw new ArgumentException(nameof(logLevel)),
             };
         }
 
