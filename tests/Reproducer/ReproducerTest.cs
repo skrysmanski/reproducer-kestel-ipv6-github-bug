@@ -1,29 +1,10 @@
-﻿#region License
-// Copyright 2021 AppMotor Framework (https://github.com/skrysmanski/AppMotor)
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-#endregion
-
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
-
-using AppMotor.Core.Net;
-using AppMotor.Core.Net.Http;
 
 using JetBrains.Annotations;
 
@@ -47,6 +28,8 @@ namespace Reproducer
     {
         private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
 
+        private static readonly HttpClient s_httpClient = new();
+
         private ITestOutputHelper TestConsole { get; }
 
         public ReproducerTests(ITestOutputHelper testOutputHelper)
@@ -69,14 +52,12 @@ namespace Reproducer
 
             try
             {
-                using var httpClient = HttpClientFactory.CreateHttpClient();
-
                 if (targetHostIpAddress == "public")
                 {
                     targetHostIpAddress = s_ownIPv6Address.Value;
                 }
 
-                await ExecuteRequest(httpClient, targetHostIpAddress, testPort);
+                await ExecuteRequest(targetHostIpAddress, testPort);
             }
             finally
             {
@@ -88,7 +69,7 @@ namespace Reproducer
             }
         }
 
-        private async Task ExecuteRequest(HttpClient httpClient, string targetHostIpAddress, int testPort)
+        private async Task ExecuteRequest(string targetHostIpAddress, int testPort)
         {
             this.TestConsole.WriteLine("");
             this.TestConsole.WriteLine($"Running query against: {targetHostIpAddress}");
@@ -102,7 +83,7 @@ namespace Reproducer
             HttpResponseMessage response;
             try
             {
-                response = await httpClient.SendAsync(requestMessage);
+                response = await s_httpClient.SendAsync(requestMessage);
             }
             catch (Exception ex)
             {
@@ -239,5 +220,7 @@ namespace Reproducer
                 });
             }
         }
+
+        private record ServerPort(SocketListenAddresses ListenAddress, int Port);
     }
 }

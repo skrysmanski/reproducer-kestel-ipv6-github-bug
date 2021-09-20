@@ -14,7 +14,7 @@
 // limitations under the License.
 #endregion
 
-namespace AppMotor.Core.Net
+namespace Reproducer.Utils
 {
     public enum SocketListenAddresses
     {
