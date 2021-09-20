@@ -70,7 +70,7 @@ namespace Reproducer
         {
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
 
-            this.TestConsole.WriteLine($"\n[CLIENT] Running query against: {requestUri}\n");
+            this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
 
             var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
@@ -80,12 +80,18 @@ namespace Reproducer
             {
                 response.EnsureSuccessStatusCode();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                this.TestConsole.WriteLine($"\n[CLIENT] Error: {ex.Message}\n");
+
                 var errorResponseString = await response.Content.ReadAsStringAsync();
-                this.TestConsole.WriteLine("[START ERROR RESPONSE]");
-                this.TestConsole.WriteLine(errorResponseString);
-                this.TestConsole.WriteLine("[END ERROR RESPONSE]");
+                if (!string.IsNullOrWhiteSpace(errorResponseString))
+                {
+                    this.TestConsole.WriteLine("\n[CLIENT] Error Response:");
+                    this.TestConsole.WriteLine(errorResponseString);
+                    this.TestConsole.WriteLine("");
+                }
+
                 throw;
             }
 
