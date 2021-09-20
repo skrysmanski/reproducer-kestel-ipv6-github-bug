@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,22 +44,21 @@ namespace Reproducer
         {
             get
             {
-                yield return new object[] { SocketListenAddresses.Loopback, "::1" };
-                yield return new object[] { SocketListenAddresses.Any, "::1" };
+                yield return new object[] { "::1" };
                 foreach (var address in s_ownIPv6Addresses.Value)
                 {
-                    yield return new object[] { SocketListenAddresses.Any, address };
+                    yield return new object[] { address };
                 }
             }
         }
 
         [Theory]
         [MemberData(nameof(TestData))]
-        public async Task TestConnection(SocketListenAddresses listenAddress, string targetHostIpAddress)
+        public async Task TestConnection(string targetHostIpAddress)
         {
             using var cts = new CancellationTokenSource();
 
-            Task appTask = RunServerAsync(listenAddress, cts.Token);
+            Task appTask = RunServerAsync(cts.Token);
 
             try
             {
@@ -76,7 +74,7 @@ namespace Reproducer
 
         private async Task ExecuteRequest(string targetHostIpAddress)
         {
-            targetHostIpAddress = Regex.Replace(targetHostIpAddress, @"^(.+)%\d+$", "$1");
+            //targetHostIpAddress = System.Text.RegularExpressions.Regex.Replace(targetHostIpAddress, @"^(.+)%\d+$", "$1");
 
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
 
@@ -145,7 +143,7 @@ namespace Reproducer
             return allAddresses;
         }
 
-        private async Task RunServerAsync(SocketListenAddresses listenAddress, CancellationToken cancellationToken)
+        private async Task RunServerAsync(CancellationToken cancellationToken)
         {
             var hostBuilder = Host.CreateDefaultBuilder();
 
@@ -165,14 +163,7 @@ namespace Reproducer
             {
                 webBuilder.UseKestrel(options =>
                 {
-                    if (listenAddress == SocketListenAddresses.Loopback)
-                    {
-                        options.Listen(IPAddress.IPv6Loopback, this._testPort);
-                    }
-                    else
-                    {
-                        options.Listen(IPAddress.IPv6Any, this._testPort);
-                    }
+                    options.Listen(IPAddress.IPv6Any, this._testPort);
                 });
 
                 // Use our "Startup" class for any further configuration.
