@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -46,6 +47,12 @@ namespace Reproducer
                 foreach (var address in GetOwnLinkLocalIpV6Addresses())
                 {
                     yield return new object[] { address };
+
+                    if (address.Contains('%'))
+                    {
+                        yield return new object[] { Regex.Replace(address, @"^(.+)%\d+$", "$1") };     // without %.. part
+                        yield return new object[] { address.Replace("%", WebUtility.UrlEncode("%")) }; // with encoded %
+                    }
                 }
             }
         }
@@ -72,8 +79,6 @@ namespace Reproducer
 
         private async Task ExecuteRequest(string targetHostIpAddress)
         {
-            //targetHostIpAddress = System.Text.RegularExpressions.Regex.Replace(targetHostIpAddress, @"^(.+)%\d+$", "$1");
-
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
 
             this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
