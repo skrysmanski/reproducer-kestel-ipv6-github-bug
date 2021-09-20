@@ -8,6 +8,8 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
+using AppMotor.Core.Logging;
+
 using JetBrains.Annotations;
 
 using Microsoft.AspNetCore.Builder;
@@ -85,7 +87,16 @@ namespace Reproducer
 
             var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
-            HttpResponseMessage response = await s_httpClient.SendAsync(requestMessage);
+            HttpResponseMessage response;
+            try
+            {
+                response = await s_httpClient.SendAsync(requestMessage);
+            }
+            catch (Exception ex)
+            {
+                this.TestConsole.WriteLine($"\n[CLIENT] Error:\n\n{ex.ToStringExtended()}\n\n");
+                throw;
+            }
 
             try
             {
