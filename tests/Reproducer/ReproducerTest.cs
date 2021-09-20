@@ -32,9 +32,12 @@ namespace Reproducer
 
         private ITestOutputHelper TestConsole { get; }
 
+        private readonly int _testPort;
+
         public ReproducerTests(ITestOutputHelper testOutputHelper)
         {
             this.TestConsole = testOutputHelper;
+            this._testPort = ServerPortProvider.GetNextTestPort();
         }
 
         [Theory]
@@ -43,12 +46,9 @@ namespace Reproducer
         [InlineData(SocketListenAddresses.Any, "public")]
         public async Task TestConnection(SocketListenAddresses listenAddress, string targetHostIpAddress)
         {
-            int testPort = ServerPortProvider.GetNextTestPort();
-
             using var cts = new CancellationTokenSource();
 
-            var serverPort = new ServerPort(listenAddress, testPort);
-            Task appTask = RunServerAsync(cts.Token, serverPort);
+            Task appTask = RunServerAsync(listenAddress, cts.Token);
 
             try
             {
@@ -57,39 +57,25 @@ namespace Reproducer
                     targetHostIpAddress = s_ownIPv6Address.Value;
                 }
 
-                await ExecuteRequest(targetHostIpAddress, testPort);
+                await ExecuteRequest(targetHostIpAddress);
             }
             finally
             {
-                this.TestConsole.WriteLine("");
-
                 cts.Cancel();
 
                 await appTask;
             }
         }
 
-        private async Task ExecuteRequest(string targetHostIpAddress, int testPort)
+        private async Task ExecuteRequest(string targetHostIpAddress)
         {
-            this.TestConsole.WriteLine("");
-            this.TestConsole.WriteLine($"Running query against: {targetHostIpAddress}");
+            var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
 
-            var requestUri = new Uri($"http://[{targetHostIpAddress}]:{testPort}/api/ping");
-
-            this.TestConsole.WriteLine($"IDN host: {requestUri.IdnHost}");
+            this.TestConsole.WriteLine($"\n[CLIENT] Running query against: {requestUri}\n");
 
             var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
-            HttpResponseMessage response;
-            try
-            {
-                response = await s_httpClient.SendAsync(requestMessage);
-            }
-            catch (Exception ex)
-            {
-                this.TestConsole.WriteLine(ex.ToString());
-                throw;
-            }
+            HttpResponseMessage response = await s_httpClient.SendAsync(requestMessage);
 
             try
             {
@@ -106,9 +92,9 @@ namespace Reproducer
 
             var responseString = await response.Content.ReadAsStringAsync();
 
-            responseString.ShouldBe($"Caller ip address family: {AddressFamily.InterNetworkV6}");
+            responseString.ShouldBe("Pong");
 
-            this.TestConsole.WriteLine("Done");
+            this.TestConsole.WriteLine("\n[CLIENT] Done\n");
         }
 
         [MustUseReturnValue]
@@ -142,7 +128,7 @@ namespace Reproducer
             throw new InvalidOperationException("No usable IPv6 network interface exists.");
         }
 
-        private async Task RunServerAsync(CancellationToken cancellationToken, ServerPort testPort)
+        private async Task RunServerAsync(SocketListenAddresses listenAddress, CancellationToken cancellationToken)
         {
             var hostBuilder = Host.CreateDefaultBuilder();
 
@@ -151,8 +137,10 @@ namespace Reproducer
                 // Load the logging configuration from the specified configuration section.
                 loggingBuilder.AddConfiguration(context.Configuration.GetSection("Logging"));
 
+                // For log level names, see: https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-5.0#configure-logging-1
                 context.Configuration["Logging:LogLevel:Default"] = "Debug";
-                //ctx.Configuration["Logging:LogLevel:Default"] = "Trace";
+                //context.Configuration["Logging:LogLevel:Default"] = "Trace";
+
                 loggingBuilder.AddXUnitLogger(this.TestConsole);
             });
 
@@ -163,7 +151,7 @@ namespace Reproducer
                 webBuilder.UseUrls("");
 
                 // Configure Kestrel.
-                webBuilder.UseKestrel(options => ConfigureKestrel(options, testPort));
+                webBuilder.UseKestrel(options => ConfigureKestrel(options, listenAddress));
 
                 // Use our "Startup" class for any further configuration.
                 webBuilder.UseStartup<Startup>();
@@ -174,25 +162,22 @@ namespace Reproducer
             await host.RunAsync(cancellationToken);
         }
 
-        private static void ConfigureKestrel(KestrelServerOptions options, ServerPort testPort)
+        private void ConfigureKestrel(KestrelServerOptions options, SocketListenAddresses listenAddress)
         {
             static void Configure(ListenOptions listenOptions)
             {
                 listenOptions.UseConnectionLogging();
             }
 
-            switch (testPort.ListenAddress)
+            switch (listenAddress)
             {
                 case SocketListenAddresses.Any:
-                    options.Listen(IPAddress.IPv6Any, testPort.Port, Configure);
+                    options.Listen(IPAddress.IPv6Any, this._testPort, Configure);
                     break;
 
                 case SocketListenAddresses.Loopback:
-                    options.Listen(IPAddress.IPv6Loopback, testPort.Port, Configure);
+                    options.Listen(IPAddress.IPv6Loopback, this._testPort, Configure);
                     break;
-
-                default:
-                    throw new InvalidOperationException(nameof(testPort.ListenAddress));
             }
         }
 
@@ -210,17 +195,10 @@ namespace Reproducer
                 {
                     endpoints.MapGet("/api/ping", async context =>
                     {
-                        IPAddress? callerIpAddress = context.Request.HttpContext.Connection.RemoteIpAddress;
-                        callerIpAddress.ShouldNotBeNull();
-
-                        var addressFamily = callerIpAddress.IsIPv4MappedToIPv6 ? AddressFamily.InterNetwork : callerIpAddress.AddressFamily;
-
-                        await context.Response.WriteAsync($"Caller ip address family: {addressFamily}");
+                        await context.Response.WriteAsync("Pong");
                     });
                 });
             }
         }
-
-        private record ServerPort(SocketListenAddresses ListenAddress, int Port);
     }
 }
