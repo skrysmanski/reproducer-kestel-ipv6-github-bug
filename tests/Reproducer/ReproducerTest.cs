@@ -85,12 +85,10 @@ namespace Reproducer
 
             this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
 
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
-
             HttpResponseMessage response;
             try
             {
-                response = await s_httpClient.SendAsync(requestMessage);
+                response = await s_httpClient.GetAsync(requestUri);
             }
             catch (Exception ex)
             {
