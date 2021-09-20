@@ -11,7 +11,6 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -144,14 +143,19 @@ namespace Reproducer
                 loggingBuilder.AddXUnitLogger(this.TestConsole);
             });
 
-            hostBuilder.ConfigureWebHostDefaults(webBuilder => // Create the HTTP host
+            hostBuilder.ConfigureWebHostDefaults(webBuilder =>
             {
-                // Clear any "pre-defined" list of URLs (otherwise there will be a warning when
-                // this app runs).
-                webBuilder.UseUrls("");
-
-                // Configure Kestrel.
-                webBuilder.UseKestrel(options => ConfigureKestrel(options, listenAddress));
+                webBuilder.UseKestrel(options =>
+                {
+                    if (listenAddress == SocketListenAddresses.Loopback)
+                    {
+                        options.Listen(IPAddress.IPv6Loopback, this._testPort);
+                    }
+                    else
+                    {
+                        options.Listen(IPAddress.IPv6Any, this._testPort);
+                    }
+                });
 
                 // Use our "Startup" class for any further configuration.
                 webBuilder.UseStartup<Startup>();
@@ -160,25 +164,6 @@ namespace Reproducer
             IHost host = hostBuilder.Build();
 
             await host.RunAsync(cancellationToken);
-        }
-
-        private void ConfigureKestrel(KestrelServerOptions options, SocketListenAddresses listenAddress)
-        {
-            static void Configure(ListenOptions listenOptions)
-            {
-                listenOptions.UseConnectionLogging();
-            }
-
-            switch (listenAddress)
-            {
-                case SocketListenAddresses.Any:
-                    options.Listen(IPAddress.IPv6Any, this._testPort, Configure);
-                    break;
-
-                case SocketListenAddresses.Loopback:
-                    options.Listen(IPAddress.IPv6Loopback, this._testPort, Configure);
-                    break;
-            }
         }
 
         private sealed class Startup
