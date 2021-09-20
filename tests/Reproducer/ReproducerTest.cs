@@ -26,7 +26,7 @@ namespace Reproducer
 {
     public sealed class ReproducerTests
     {
-        private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
+        private static readonly Lazy<List<string>> s_ownIPv6Addresses = new(GetLocalIpAddresses);
 
         private static readonly HttpClient s_httpClient = new();
 
@@ -46,7 +46,10 @@ namespace Reproducer
             {
                 yield return new object[] { SocketListenAddresses.Loopback, "::1" };
                 yield return new object[] { SocketListenAddresses.Any, "::1" };
-                yield return new object[] { SocketListenAddresses.Any, s_ownIPv6Address.Value };
+                foreach (var address in s_ownIPv6Addresses.Value)
+                {
+                    yield return new object[] { SocketListenAddresses.Any, address };
+                }
             }
         }
 
@@ -107,8 +110,10 @@ namespace Reproducer
         }
 
         [MustUseReturnValue]
-        private static string GetLocalIpAddress()
+        private static List<string> GetLocalIpAddresses()
         {
+            var allAddresses = new List<string>();
+
             foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (networkInterface.OperationalStatus != OperationalStatus.Up || !networkInterface.Supports(NetworkInterfaceComponent.IPv6))
@@ -130,11 +135,11 @@ namespace Reproducer
                         continue;
                     }
 
-                    return ip.Address.ToString();
+                    allAddresses.Add(ip.Address.ToString());
                 }
             }
 
-            throw new InvalidOperationException("No usable IPv6 network interface exists.");
+            return allAddresses;
         }
 
         private async Task RunServerAsync(SocketListenAddresses listenAddress, CancellationToken cancellationToken)
