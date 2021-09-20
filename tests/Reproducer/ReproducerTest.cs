@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -75,6 +76,8 @@ namespace Reproducer
 
         private async Task ExecuteRequest(string targetHostIpAddress)
         {
+            targetHostIpAddress = Regex.Replace(targetHostIpAddress, @"^(.+)%\d+$", "$1");
+
             var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
 
             this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
