@@ -4,8 +4,11 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+
+using AppMotor.Core.Logging;
 
 using JetBrains.Annotations;
 
@@ -26,8 +29,6 @@ namespace Reproducer
 {
     public sealed class ReproducerTests
     {
-        private static readonly Lazy<string> s_ownIPv6Address = new(GetLocalIpAddress);
-
         private static readonly HttpClient s_httpClient = new();
 
         private ITestOutputHelper TestConsole { get; }
@@ -44,19 +45,27 @@ namespace Reproducer
         {
             get
             {
-                yield return new object[] { SocketListenAddresses.Loopback, "::1" };
-                yield return new object[] { SocketListenAddresses.Any, "::1" };
-                yield return new object[] { SocketListenAddresses.Any, s_ownIPv6Address.Value };
+                yield return new object[] { "::1" };
+                foreach (var address in GetOwnLinkLocalIpV6Addresses())
+                {
+                    yield return new object[] { address };
+
+                    if (address.Contains('%'))
+                    {
+                        yield return new object[] { Regex.Replace(address, @"^(.+)%\d+$", "$1") };     // without %.. part
+                        yield return new object[] { address.Replace("%", WebUtility.UrlEncode("%")) }; // with encoded %
+                    }
+                }
             }
         }
 
         [Theory]
         [MemberData(nameof(TestData))]
-        public async Task TestConnection(SocketListenAddresses listenAddress, string targetHostIpAddress)
+        public async Task TestConnection(string targetHostIpAddress)
         {
             using var cts = new CancellationTokenSource();
 
-            Task appTask = RunServerAsync(listenAddress, cts.Token);
+            Task appTask = RunServerAsync(cts.Token);
 
             try
             {
@@ -76,9 +85,16 @@ namespace Reproducer
 
             this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
 
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
-
-            HttpResponseMessage response = await s_httpClient.SendAsync(requestMessage);
+            HttpResponseMessage response;
+            try
+            {
+                response = await s_httpClient.GetAsync(requestUri);
+            }
+            catch (Exception ex)
+            {
+                this.TestConsole.WriteLine($"\n[CLIENT] Error:\n\n{ex.ToStringExtended()}\n\n");
+                throw;
+            }
 
             try
             {
@@ -107,8 +123,10 @@ namespace Reproducer
         }
 
         [MustUseReturnValue]
-        private static string GetLocalIpAddress()
+        private static List<string> GetOwnLinkLocalIpV6Addresses()
         {
+            var allAddresses = new List<string>();
+
             foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (networkInterface.OperationalStatus != OperationalStatus.Up || !networkInterface.Supports(NetworkInterfaceComponent.IPv6))
@@ -130,14 +148,19 @@ namespace Reproducer
                         continue;
                     }
 
-                    return ip.Address.ToString();
+                    if (!ip.Address.IsIPv6LinkLocal)
+                    {
+                        continue;
+                    }
+
+                    allAddresses.Add(ip.Address.ToString());
                 }
             }
 
-            throw new InvalidOperationException("No usable IPv6 network interface exists.");
+            return allAddresses;
         }
 
-        private async Task RunServerAsync(SocketListenAddresses listenAddress, CancellationToken cancellationToken)
+        private async Task RunServerAsync(CancellationToken cancellationToken)
         {
             var hostBuilder = Host.CreateDefaultBuilder();
 
@@ -157,14 +180,7 @@ namespace Reproducer
             {
                 webBuilder.UseKestrel(options =>
                 {
-                    if (listenAddress == SocketListenAddresses.Loopback)
-                    {
-                        options.Listen(IPAddress.IPv6Loopback, this._testPort);
-                    }
-                    else
-                    {
-                        options.Listen(IPAddress.IPv6Any, this._testPort);
-                    }
+                    options.Listen(IPAddress.IPv6Any, this._testPort);
                 });
 
                 // Use our "Startup" class for any further configuration.
