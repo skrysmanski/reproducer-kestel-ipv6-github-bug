@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -49,12 +48,6 @@ namespace Reproducer
                 foreach (var address in GetOwnLinkLocalIpV6Addresses())
                 {
                     yield return new object[] { address };
-
-                    if (address.Contains('%'))
-                    {
-                        yield return new object[] { Regex.Replace(address, @"^(.+)%\d+$", "$1") };     // without %.. part
-                        yield return new object[] { address.Replace("%", WebUtility.UrlEncode("%")) }; // with encoded %
-                    }
                 }
             }
         }
