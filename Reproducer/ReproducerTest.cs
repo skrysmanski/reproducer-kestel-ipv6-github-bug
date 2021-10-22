@@ -80,6 +80,8 @@ namespace Reproducer
 
             var requestUri = new Uri(requestUriAsString);
             var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            // Fix for bug as suggested in: https://github.com/dotnet/runtime/issues/59341#issuecomment-922935454
+            requestMessage.Headers.Host = requestUri.Authority;
 
             HttpResponseMessage response;
             try
