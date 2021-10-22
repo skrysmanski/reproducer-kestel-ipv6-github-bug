@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -49,12 +48,6 @@ namespace Reproducer
                 foreach (var address in GetOwnLinkLocalIpV6Addresses())
                 {
                     yield return new object[] { address };
-
-                    if (address.Contains('%'))
-                    {
-                        yield return new object[] { Regex.Replace(address, @"^(.+)%\d+$", "$1") };     // without %.. part
-                        yield return new object[] { address.Replace("%", WebUtility.UrlEncode("%")) }; // with encoded %
-                    }
                 }
             }
         }
@@ -81,14 +74,19 @@ namespace Reproducer
 
         private async Task ExecuteRequest(string targetHostIpAddress)
         {
-            var requestUri = new Uri($"http://[{targetHostIpAddress}]:{this._testPort}/api/ping");
+            var requestUriAsString = $"http://[{targetHostIpAddress}]:{this._testPort}/api/ping";
 
-            this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUri}\n");
+            this.TestConsole.WriteLine($"\n[CLIENT] Target host: {targetHostIpAddress}\n[CLIENT] Running query against: {requestUriAsString}\n");
+
+            var requestUri = new Uri(requestUriAsString);
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            // Fix for bug as suggested in: https://github.com/dotnet/runtime/issues/59341#issuecomment-922935454
+            requestMessage.Headers.Host = requestUri.Authority;
 
             HttpResponseMessage response;
             try
             {
-                response = await s_httpClient.GetAsync(requestUri);
+                response = await s_httpClient.SendAsync(requestMessage);
             }
             catch (Exception ex)
             {
